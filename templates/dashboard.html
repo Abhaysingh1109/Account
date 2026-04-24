@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Accounting Glass Dashboard</title>
+    <link rel="stylesheet" href="/static/dashboard.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  </head>
+  <body>
+    <div class="bg bg-a"></div>
+    <div class="bg bg-b"></div>
+
+    <main class="wrap">
+      <header class="glass hero">
+        <p class="kicker">CSV to Dashboard</p>
+        <h1>Accounting Analytics</h1>
+        <p class="sub">Upload your CSV and get instant financial visualizations.</p>
+      </header>
+
+      <section class="glass upload">
+        <form id="uploadForm">
+          <label for="fileInput">Select CSV file</label>
+          <div class="upload-row">
+            <input id="fileInput" name="file" type="file" accept=".csv" required />
+            <button type="submit">Analyze</button>
+          </div>
+        </form>
+        <p id="status" class="status">Waiting for file upload.</p>
+      </section>
+
+      <section class="metrics" id="metrics" hidden>
+        <article class="glass card"><h3>Revenue</h3><p id="m-revenue"></p></article>
+        <article class="glass card"><h3>Expense</h3><p id="m-expense"></p></article>
+        <article class="glass card"><h3>Profit</h3><p id="m-profit"></p></article>
+        <article class="glass card"><h3>Margin</h3><p id="m-margin"></p></article>
+        <article class="glass card"><h3>Net Cash</h3><p id="m-net"></p></article>
+      </section>
+
+      <section class="grid" id="charts" hidden>
+        <article class="glass panel wide">
+          <h2>Revenue vs Profit</h2>
+          <canvas id="trendChart"></canvas>
+        </article>
+
+        <article class="glass panel">
+          <h2>Expense Breakdown</h2>
+          <canvas id="expenseChart"></canvas>
+        </article>
+
+        <article class="glass panel">
+          <h2>Cash Flow</h2>
+          <canvas id="cashChart"></canvas>
+        </article>
+
+        <article class="glass panel wide">
+          <h2>Receivable vs Payable</h2>
+          <canvas id="arpChart"></canvas>
+        </article>
+
+        <article class="glass panel">
+          <h2>Top Customers</h2>
+          <div id="topCustomers" class="list"></div>
+        </article>
+
+        <article class="glass panel">
+          <h2>Insights</h2>
+          <ul id="insights"></ul>
+        </article>
+      </section>
+    </main>
+
+    <script>
+      const uploadForm = document.getElementById("uploadForm");
+      const fileInput = document.getElementById("fileInput");
+      const statusEl = document.getElementById("status");
+      const metricsSection = document.getElementById("metrics");
+      const chartsSection = document.getElementById("charts");
+      const money = new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        maximumFractionDigits: 0,
+      });
+
+      const chartRefs = { trend: null, expense: null, cash: null, arp: null };
+
+      function setStatus(message, isError = false) {
+        statusEl.textContent = message;
+        statusEl.classList.toggle("error", isError);
+      }
+
+      function destroyCharts() {
+        Object.keys(chartRefs).forEach((key) => {
+          if (chartRefs[key]) {
+            chartRefs[key].destroy();
+            chartRefs[key] = null;
+          }
+        });
+      }
+
+      function setMetrics(data) {
+        document.getElementById("m-revenue").textContent = money.format(data.metrics.revenue);
+        document.getElementById("m-expense").textContent = money.format(data.metrics.expense);
+        document.getElementById("m-profit").textContent = money.format(data.metrics.profit);
+        document.getElementById("m-margin").textContent = `${data.metrics.margin.toFixed(1)}%`;
+        document.getElementById("m-net").textContent = money.format(data.metrics.netCash);
+      }
+
+      function renderTrend(data) {
+        chartRefs.trend = new Chart(document.getElementById("trendChart"), {
+          type: "line",
+          data: {
+            labels: data.months,
+            datasets: [
+              { label: "Revenue", data: data.revenue, borderColor: "#7dd3fc", backgroundColor: "#7dd3fc" },
+              { label: "Profit", data: data.profit, borderColor: "#6ee7b7", backgroundColor: "#6ee7b7" },
+            ],
+          },
+          options: { responsive: true, maintainAspectRatio: false, tension: 0.24 },
+        });
+      }
+
+      function renderExpense(data) {
+        chartRefs.expense = new Chart(document.getElementById("expenseChart"), {
+          type: "doughnut",
+          data: {
+            labels: data.expenseBreakdown.labels,
+            datasets: [{
+              data: data.expenseBreakdown.values,
+              backgroundColor: ["#fda4af", "#fdba74", "#fde68a", "#86efac", "#93c5fd", "#c4b5fd", "#67e8f9", "#f9a8d4"],
+            }],
+          },
+          options: { responsive: true, maintainAspectRatio: false },
+        });
+      }
+
+      function renderCash(data) {
+        chartRefs.cash = new Chart(document.getElementById("cashChart"), {
+          type: "bar",
+          data: {
+            labels: data.months,
+            datasets: [
+              { label: "Inflow", data: data.revenue, backgroundColor: "rgba(110, 231, 183, 0.75)" },
+              { label: "Outflow", data: data.expenses.map((v) => -v), backgroundColor: "rgba(251, 113, 133, 0.75)" },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: { y: { ticks: { callback: (v) => money.format(v) } } },
+          },
+        });
+      }
+
+      function renderArp(data) {
+        chartRefs.arp = new Chart(document.getElementById("arpChart"), {
+          type: "bar",
+          data: {
+            labels: data.months,
+            datasets: [
+              { label: "Receivable", data: data.receivable, backgroundColor: "rgba(147, 197, 253, 0.8)" },
+              { label: "Payable", data: data.payable, backgroundColor: "rgba(196, 181, 253, 0.8)" },
+            ],
+          },
+          options: { responsive: true, maintainAspectRatio: false },
+        });
+      }
+
+      function renderTopCustomers(data) {
+        const box = document.getElementById("topCustomers");
+        if (!data.topCustomers.length) {
+          box.innerHTML = "<p class='muted'>No customer revenue data.</p>";
+          return;
+        }
+
+        box.innerHTML = data.topCustomers
+          .map((row) => `<div class="row"><span>${row.name}</span><strong>${money.format(row.revenue)}</strong></div>`)
+          .join("");
+      }
+
+      function renderInsights(data) {
+        document.getElementById("insights").innerHTML = data.insights.map((v) => `<li>${v}</li>`).join("");
+      }
+
+      function renderAll(data) {
+        destroyCharts();
+        setMetrics(data);
+        renderTrend(data);
+        renderExpense(data);
+        renderCash(data);
+        renderArp(data);
+        renderTopCustomers(data);
+        renderInsights(data);
+        metricsSection.hidden = false;
+        chartsSection.hidden = false;
+      }
+
+      uploadForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const file = fileInput.files[0];
+
+        if (!file) {
+          setStatus("Please choose a CSV file first.", true);
+          return;
+        }
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        setStatus("Analyzing your CSV data...");
+
+        try {
+          const response = await fetch("/api/analyze", {
+            method: "POST",
+            body: formData,
+          });
+
+          const payload = await response.json();
+
+          if (!response.ok) {
+            throw new Error(payload.error || "Failed to analyze file.");
+          }
+
+          renderAll(payload);
+          setStatus(`Analysis complete. Rows used: ${payload.summary.rowsUsed.toLocaleString()}.`);
+        } catch (error) {
+          setStatus(error.message, true);
+        }
+      });
+    </script>
+  </body>
+</html>
