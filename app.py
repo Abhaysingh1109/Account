@@ -10,6 +10,7 @@ from flask import Flask, jsonify, render_template, request
 
 
 app = Flask(__name__)
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
 DATE_HINTS = ["date", "transaction_date", "posting_date", "invoice_date", "entry_date"]
 AMOUNT_HINTS = ["amount", "value", "net_amount", "total", "balance", "debit", "credit"]
@@ -206,6 +207,138 @@ def generate_insights(monthly: pd.DataFrame, data: pd.DataFrame) -> list[str]:
     return insights
 
 
+def generate_structure_recommendations(
+    raw_df: pd.DataFrame,
+    data: pd.DataFrame,
+    monthly: pd.DataFrame,
+    mapping: ColumnMap,
+) -> tuple[list[dict], dict]:
+    recommendations: list[dict] = []
+    raw_rows = max(int(len(raw_df)), 1)
+    used_rows = int(len(data))
+    valid_ratio = used_rows / raw_rows
+
+    unknown_category_ratio = float((data["_category"] == "Other").mean()) if used_rows else 1.0
+    unknown_customer_ratio = float((data["_customer"] == "Unknown").mean()) if used_rows else 1.0
+    other_class_ratio = float((data["_class"] == "Other").mean()) if used_rows else 1.0
+
+    scores = {
+        "Data Quality": max(0.0, min(100.0, valid_ratio * 100)),
+        "Categorization": max(0.0, min(100.0, (1 - unknown_category_ratio) * 100)),
+        "Transaction Mapping": max(0.0, min(100.0, (1 - other_class_ratio) * 100)),
+        "Customer Coverage": max(0.0, min(100.0, (1 - unknown_customer_ratio) * 100)),
+        "Cash Discipline": 70.0,
+    }
+
+    if monthly.empty:
+        scores["Cash Discipline"] = 50.0
+    else:
+        latest = monthly.iloc[-1]
+        rev = float(latest["Revenue"])
+        ar = float(abs(latest["Receivable"]))
+        payable = float(abs(latest["Payable"]))
+        profit = float(latest["Profit"])
+        cash_score = 72.0
+        if rev > 0:
+            ar_pressure = ar / rev
+            if ar_pressure > 0.8:
+                cash_score -= 30
+            elif ar_pressure > 0.5:
+                cash_score -= 15
+        if profit < 0:
+            cash_score -= 15
+        if payable > rev * 0.7 and rev > 0:
+            cash_score -= 12
+        scores["Cash Discipline"] = max(0.0, min(100.0, cash_score))
+
+    avg_score = float(np.mean(list(scores.values())))
+    maturity = (
+        "Advanced"
+        if avg_score >= 80
+        else "Developing"
+        if avg_score >= 60
+        else "Foundation Needed"
+    )
+
+    if valid_ratio < 0.85:
+        dropped_rows = raw_rows - used_rows
+        recommendations.append(
+            {
+                "priority": "High",
+                "title": "Improve Raw Data Quality",
+                "finding": f"{dropped_rows:,} rows were dropped during cleaning because date/amount parsing failed.",
+                "action": "Standardize export format to ISO date (YYYY-MM-DD) and numeric amount columns before upload.",
+                "impact": "Cleaner source data improves trend reliability and forecasting accuracy.",
+            }
+        )
+
+    if mapping.category is None or unknown_category_ratio > 0.3:
+        recommendations.append(
+            {
+                "priority": "High",
+                "title": "Strengthen Chart of Accounts Mapping",
+                "finding": "A large share of transactions are uncategorized or mapped to generic buckets.",
+                "action": "Define a fixed account taxonomy (Revenue, COGS, Opex, AR, AP) and enforce category picklists.",
+                "impact": "Better category hygiene unlocks tighter budget control and more useful variance analysis.",
+            }
+        )
+
+    if mapping.customer is None or unknown_customer_ratio > 0.4:
+        recommendations.append(
+            {
+                "priority": "Medium",
+                "title": "Increase Customer Tagging Coverage",
+                "finding": "Many rows do not carry a customer/client identifier.",
+                "action": "Require customer codes on revenue entries and keep a simple customer master reference.",
+                "impact": "Customer-level profitability and concentration risks become visible.",
+            }
+        )
+
+    if mapping.txn_type is None:
+        recommendations.append(
+            {
+                "priority": "Medium",
+                "title": "Add Transaction Type Field",
+                "finding": "The dataset lacks an explicit transaction type column (inflow/outflow/AR/AP).",
+                "action": "Include transaction type in exports and validate values with dropdown-like controlled labels.",
+                "impact": "Classification quality improves and receivable/payable reporting becomes more precise.",
+            }
+        )
+
+    if not monthly.empty:
+        latest = monthly.iloc[-1]
+        rev = float(latest["Revenue"])
+        ar = float(abs(latest["Receivable"]))
+        if rev > 0 and (ar / rev) > 0.6:
+            recommendations.append(
+                {
+                    "priority": "High",
+                    "title": "Reduce Receivable Pressure",
+                    "finding": "Accounts receivable is high compared with current revenue.",
+                    "action": "Implement staged collection reminders and set invoice due-date SLAs by customer tier.",
+                    "impact": "Lower DSO improves liquidity and reduces cash crunch risk.",
+                }
+            )
+
+    if not recommendations:
+        recommendations.append(
+            {
+                "priority": "Low",
+                "title": "Maintain Current Structure",
+                "finding": "Your current accounting structure appears consistent and well tagged.",
+                "action": "Keep monthly account review rituals and monitor the score trend over time.",
+                "impact": "Sustains reporting quality as volume grows.",
+            }
+        )
+
+    structure_scores = [{"dimension": k, "score": round(float(v), 1)} for k, v in scores.items()]
+    return recommendations[:5], {
+        "scores": structure_scores,
+        "overallScore": round(avg_score, 1),
+        "maturity": maturity,
+    }
+
+
 def build_payload(raw_df: pd.DataFrame, data: pd.DataFrame, monthly: pd.DataFrame, mapping: ColumnMap) -> dict:
     months = [d.strftime("%Y-%m") for d in monthly.index.to_list()]
     revenue = [float(v) for v in monthly["Revenue"].to_list()]
@@ -239,6 +372,8 @@ def build_payload(raw_df: pd.DataFrame, data: pd.DataFrame, monthly: pd.DataFram
         .head(8)
     )
 
+    structure_recommendations, structure_profile = generate_structure_recommendations(raw_df, data, monthly, mapping)
+
     return {
         "months": months,
         "revenue": revenue,
@@ -262,6 +397,8 @@ def build_payload(raw_df: pd.DataFrame, data: pd.DataFrame, monthly: pd.DataFram
             {"name": str(r["_customer"]), "revenue": float(r["_amount"])} for _, r in top_customers.iterrows()
         ],
         "insights": generate_insights(monthly, data),
+        "structureAdvice": structure_recommendations,
+        "structureProfile": structure_profile,
         "summary": {
             "rowsUploaded": int(len(raw_df)),
             "rowsUsed": int(len(data)),
@@ -315,6 +452,14 @@ def analyze_csv():
     monthly = monthly_metrics(data)
     payload = build_payload(raw_df, data, monthly, mapping)
     return jsonify(payload)
+
+
+@app.after_request
+def add_no_cache_headers(response):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 if __name__ == "__main__":

@@ -6,19 +6,21 @@
     <title>Accounting Glass Dashboard</title>
     <link rel="stylesheet" href="/static/dashboard.css" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
   </head>
   <body>
     <div class="bg bg-a"></div>
     <div class="bg bg-b"></div>
+    <div class="grid-lines"></div>
 
     <main class="wrap">
-      <header class="glass hero">
-        <p class="kicker">CSV to Dashboard</p>
-        <h1>Accounting Analytics</h1>
-        <p class="sub">Upload your CSV and get instant financial visualizations.</p>
+      <header class="glass hero tilt">
+        <p class="kicker">Immersive Finance Studio</p>
+        <h1>Accounting Intelligence Dashboard</h1>
+        <p class="sub">Upload your CSV and experience interactive financial visuals with structure-improvement guidance.</p>
       </header>
 
-      <section class="glass upload">
+      <section class="glass upload tilt">
         <form id="uploadForm">
           <label for="fileInput">Select CSV file</label>
           <div class="upload-row">
@@ -30,43 +32,63 @@
       </section>
 
       <section class="metrics" id="metrics" hidden>
-        <article class="glass card"><h3>Revenue</h3><p id="m-revenue"></p></article>
-        <article class="glass card"><h3>Expense</h3><p id="m-expense"></p></article>
-        <article class="glass card"><h3>Profit</h3><p id="m-profit"></p></article>
-        <article class="glass card"><h3>Margin</h3><p id="m-margin"></p></article>
-        <article class="glass card"><h3>Net Cash</h3><p id="m-net"></p></article>
+        <article class="glass card tilt"><h3>Revenue</h3><p id="m-revenue"></p></article>
+        <article class="glass card tilt"><h3>Expense</h3><p id="m-expense"></p></article>
+        <article class="glass card tilt"><h3>Profit</h3><p id="m-profit"></p></article>
+        <article class="glass card tilt"><h3>Margin</h3><p id="m-margin"></p></article>
+        <article class="glass card tilt"><h3>Net Cash</h3><p id="m-net"></p></article>
       </section>
 
       <section class="grid" id="charts" hidden>
-        <article class="glass panel wide">
+        <article class="glass panel wide tilt">
           <h2>Revenue vs Profit</h2>
           <canvas id="trendChart"></canvas>
         </article>
 
-        <article class="glass panel">
+        <article class="glass panel tilt">
           <h2>Expense Breakdown</h2>
           <canvas id="expenseChart"></canvas>
         </article>
 
-        <article class="glass panel">
+        <article class="glass panel tilt">
           <h2>Cash Flow</h2>
           <canvas id="cashChart"></canvas>
         </article>
 
-        <article class="glass panel wide">
+        <article class="glass panel wide tilt">
           <h2>Receivable vs Payable</h2>
           <canvas id="arpChart"></canvas>
         </article>
 
-        <article class="glass panel">
+        <article class="glass panel tilt">
           <h2>Top Customers</h2>
           <div id="topCustomers" class="list"></div>
         </article>
 
-        <article class="glass panel">
-          <h2>Insights</h2>
+        <article class="glass panel tilt">
+          <h2>Performance Insights</h2>
           <ul id="insights"></ul>
         </article>
+      </section>
+
+      <section class="structure" id="structure" hidden>
+        <article class="glass panel tilt">
+          <h2>3D Account Structure Profile</h2>
+          <p class="micro">3D pillar strength by accounting quality dimension.</p>
+          <div id="profile3d" class="plot-box"></div>
+        </article>
+
+        <article class="glass panel tilt">
+          <h2>3D Improvement Surface</h2>
+          <p class="micro">Current maturity plane versus target posture.</p>
+          <div id="surface3d" class="plot-box"></div>
+        </article>
+      </section>
+
+      <section class="glass panel tilt" id="advicePanel" hidden>
+        <h2>How To Improve Account Structure</h2>
+        <p class="micro" id="maturityLine"></p>
+        <div id="adviceList" class="advice-list"></div>
       </section>
     </main>
 
@@ -76,6 +98,8 @@
       const statusEl = document.getElementById("status");
       const metricsSection = document.getElementById("metrics");
       const chartsSection = document.getElementById("charts");
+      const structureSection = document.getElementById("structure");
+      const advicePanel = document.getElementById("advicePanel");
       const money = new Intl.NumberFormat("en-US", {
         style: "currency",
         currency: "USD",
@@ -106,17 +130,33 @@
         document.getElementById("m-net").textContent = money.format(data.metrics.netCash);
       }
 
+      function baseOptions() {
+        return {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              labels: { color: "#dbeafe" },
+            },
+          },
+          scales: {
+            x: { ticks: { color: "#bfdbfe" }, grid: { color: "rgba(191,219,254,0.16)" } },
+            y: { ticks: { color: "#bfdbfe" }, grid: { color: "rgba(191,219,254,0.16)" } },
+          },
+        };
+      }
+
       function renderTrend(data) {
         chartRefs.trend = new Chart(document.getElementById("trendChart"), {
           type: "line",
           data: {
             labels: data.months,
             datasets: [
-              { label: "Revenue", data: data.revenue, borderColor: "#7dd3fc", backgroundColor: "#7dd3fc" },
-              { label: "Profit", data: data.profit, borderColor: "#6ee7b7", backgroundColor: "#6ee7b7" },
+              { label: "Revenue", data: data.revenue, borderColor: "#7dd3fc", backgroundColor: "#7dd3fc", borderWidth: 3 },
+              { label: "Profit", data: data.profit, borderColor: "#6ee7b7", backgroundColor: "#6ee7b7", borderWidth: 3 },
             ],
           },
-          options: { responsive: true, maintainAspectRatio: false, tension: 0.24 },
+          options: { ...baseOptions(), tension: 0.28 },
         });
       }
 
@@ -130,7 +170,10 @@
               backgroundColor: ["#fda4af", "#fdba74", "#fde68a", "#86efac", "#93c5fd", "#c4b5fd", "#67e8f9", "#f9a8d4"],
             }],
           },
-          options: { responsive: true, maintainAspectRatio: false },
+          options: {
+            ...baseOptions(),
+            scales: {},
+          },
         });
       }
 
@@ -140,14 +183,16 @@
           data: {
             labels: data.months,
             datasets: [
-              { label: "Inflow", data: data.revenue, backgroundColor: "rgba(110, 231, 183, 0.75)" },
-              { label: "Outflow", data: data.expenses.map((v) => -v), backgroundColor: "rgba(251, 113, 133, 0.75)" },
+              { label: "Inflow", data: data.revenue, backgroundColor: "rgba(110, 231, 183, 0.75)", borderRadius: 8 },
+              { label: "Outflow", data: data.expenses.map((v) => -v), backgroundColor: "rgba(251, 113, 133, 0.75)", borderRadius: 8 },
             ],
           },
           options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: { y: { ticks: { callback: (v) => money.format(v) } } },
+            ...baseOptions(),
+            scales: {
+              x: { ticks: { color: "#bfdbfe" }, grid: { color: "rgba(191,219,254,0.16)" } },
+              y: { ticks: { color: "#bfdbfe", callback: (v) => money.format(v) }, grid: { color: "rgba(191,219,254,0.16)" } },
+            },
           },
         });
       }
@@ -158,11 +203,11 @@
           data: {
             labels: data.months,
             datasets: [
-              { label: "Receivable", data: data.receivable, backgroundColor: "rgba(147, 197, 253, 0.8)" },
-              { label: "Payable", data: data.payable, backgroundColor: "rgba(196, 181, 253, 0.8)" },
+              { label: "Receivable", data: data.receivable, backgroundColor: "rgba(147, 197, 253, 0.8)", borderRadius: 8 },
+              { label: "Payable", data: data.payable, backgroundColor: "rgba(196, 181, 253, 0.8)", borderRadius: 8 },
             ],
           },
-          options: { responsive: true, maintainAspectRatio: false },
+          options: baseOptions(),
         });
       }
 
@@ -182,6 +227,125 @@
         document.getElementById("insights").innerHTML = data.insights.map((v) => `<li>${v}</li>`).join("");
       }
 
+      function renderStructure3D(data) {
+        const profile = data.structureProfile || { scores: [] };
+        if (!profile.scores.length) {
+          document.getElementById("profile3d").innerHTML = "<p class='muted'>Structure profile is not available for this file.</p>";
+          return;
+        }
+
+        const dims = profile.scores.map((v) => v.dimension);
+        const scores = profile.scores.map((v) => v.score);
+        const bars = dims.flatMap((dim, idx) => [
+          {
+            type: "scatter3d",
+            mode: "lines",
+            x: [dim, dim],
+            y: ["Current", "Current"],
+            z: [0, scores[idx]],
+            line: { color: "#7dd3fc", width: 10 },
+            hoverinfo: "skip",
+            showlegend: false,
+          },
+          {
+            type: "scatter3d",
+            mode: "markers+text",
+            x: [dim],
+            y: ["Current"],
+            z: [scores[idx]],
+            marker: {
+              size: 9,
+              color: scores[idx],
+              colorscale: "Turbo",
+              cmin: 0,
+              cmax: 100,
+              line: { width: 1, color: "#dbeafe" },
+            },
+            text: [scores[idx].toFixed(1)],
+            textposition: "top center",
+            hovertemplate: `${dim}: ${scores[idx].toFixed(1)}<extra></extra>`,
+            showlegend: false,
+          },
+        ]);
+
+        Plotly.newPlot("profile3d", bars, {
+          paper_bgcolor: "rgba(0,0,0,0)",
+          plot_bgcolor: "rgba(0,0,0,0)",
+          margin: { l: 0, r: 0, t: 0, b: 0 },
+          scene: {
+            camera: { eye: { x: 1.55, y: 1.4, z: 0.8 } },
+            xaxis: { title: "Dimension", color: "#bfdbfe" },
+            yaxis: { title: "Profile", color: "#bfdbfe" },
+            zaxis: { title: "Score", range: [0, 100], color: "#bfdbfe" },
+            bgcolor: "rgba(0,0,0,0)",
+          },
+        }, { displayModeBar: false, responsive: true });
+      }
+
+      function renderSurface3D(data) {
+        const profile = data.structureProfile || { scores: [] };
+        if (!profile.scores.length) {
+          document.getElementById("surface3d").innerHTML = "<p class='muted'>Improvement surface is not available for this file.</p>";
+          return;
+        }
+
+        const dims = profile.scores.map((v) => v.dimension);
+        const current = profile.scores.map((v) => v.score);
+        const target = dims.map(() => 88);
+        const postureCurrent = dims.map(() => "Current");
+        const postureTarget = dims.map(() => "Target");
+
+        Plotly.newPlot("surface3d", [
+          {
+            type: "surface",
+            x: [dims, dims],
+            y: [postureCurrent, postureTarget],
+            z: [current, target],
+            colorscale: "Viridis",
+            opacity: 0.9,
+            showscale: false,
+            hovertemplate: "%{x} (%{y}): %{z:.1f}<extra></extra>",
+          },
+        ], {
+          paper_bgcolor: "rgba(0,0,0,0)",
+          plot_bgcolor: "rgba(0,0,0,0)",
+          margin: { l: 0, r: 0, t: 0, b: 0 },
+          scene: {
+            camera: { eye: { x: 1.7, y: 1.25, z: 0.7 } },
+            xaxis: { title: "Dimension", color: "#bfdbfe" },
+            yaxis: { title: "Posture", color: "#bfdbfe" },
+            zaxis: { title: "Score", range: [0, 100], color: "#bfdbfe" },
+            bgcolor: "rgba(0,0,0,0)",
+          },
+        }, { displayModeBar: false, responsive: true });
+      }
+
+      function renderAdvice(data) {
+        const profile = data.structureProfile || { maturity: "Not Available", overallScore: 0 };
+        const advice = data.structureAdvice || [];
+        const maturity = profile.maturity;
+        const overall = profile.overallScore;
+        document.getElementById("maturityLine").textContent = `Current maturity: ${maturity} (${overall}/100).`;
+
+        const list = document.getElementById("adviceList");
+        if (!advice.length) {
+          list.innerHTML = "<p class='muted'>No structure recommendations are available for this file.</p>";
+          return;
+        }
+
+        list.innerHTML = advice
+          .map((item) => `
+            <article class="advice-item ${item.priority.toLowerCase()}">
+              <div class="chip">${item.priority}</div>
+              <h3>${item.title}</h3>
+              <p><strong>Finding:</strong> ${item.finding}</p>
+              <p><strong>Action:</strong> ${item.action}</p>
+              <p><strong>Impact:</strong> ${item.impact}</p>
+            </article>
+          `)
+          .join("");
+      }
+
       function renderAll(data) {
         destroyCharts();
         setMetrics(data);
@@ -191,9 +355,32 @@
         renderArp(data);
         renderTopCustomers(data);
         renderInsights(data);
+        renderStructure3D(data);
+        renderSurface3D(data);
+        renderAdvice(data);
+
         metricsSection.hidden = false;
         chartsSection.hidden = false;
+        structureSection.hidden = false;
+        advicePanel.hidden = false;
       }
+
+      document.querySelectorAll(".tilt").forEach((card) => {
+        card.addEventListener("mousemove", (event) => {
+          const rect = card.getBoundingClientRect();
+          const x = event.clientX - rect.left;
+          const y = event.clientY - rect.top;
+          const cx = rect.width / 2;
+          const cy = rect.height / 2;
+          const rx = ((cy - y) / cy) * 4;
+          const ry = ((x - cx) / cx) * 4;
+          card.style.transform = `perspective(900px) rotateX(${rx}deg) rotateY(${ry}deg)`;
+        });
+
+        card.addEventListener("mouseleave", () => {
+          card.style.transform = "perspective(900px) rotateX(0deg) rotateY(0deg)";
+        });
+      });
 
       uploadForm.addEventListener("submit", async (event) => {
         event.preventDefault();
@@ -207,7 +394,7 @@
         const formData = new FormData();
         formData.append("file", file);
 
-        setStatus("Analyzing your CSV data...");
+        setStatus("Analyzing your CSV data and generating structure guidance...");
 
         try {
           const response = await fetch("/api/analyze", {
