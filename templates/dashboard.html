@@ -72,15 +72,17 @@
       </section>
 
       <section class="structure" id="structure" hidden>
-        <article class="glass panel tilt">
+        <article class="glass panel tilt explainable" id="profileCard" role="button" tabindex="0" aria-label="Open profile explanation">
           <h2>3D Account Structure Profile</h2>
           <p class="micro">3D pillar strength by accounting quality dimension.</p>
+          <p class="tap-hint">Click card for explanation</p>
           <div id="profile3d" class="plot-box"></div>
         </article>
 
-        <article class="glass panel tilt">
+        <article class="glass panel tilt explainable" id="surfaceCard" role="button" tabindex="0" aria-label="Open surface explanation">
           <h2>3D Improvement Surface</h2>
           <p class="micro">Current maturity plane versus target posture.</p>
+          <p class="tap-hint">Click card for explanation</p>
           <div id="surface3d" class="plot-box"></div>
         </article>
       </section>
@@ -92,6 +94,20 @@
       </section>
     </main>
 
+    <div class="modal hidden" id="explainModal" aria-hidden="true">
+      <div class="modal-backdrop" id="modalBackdrop"></div>
+      <section class="modal-card glass" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <header class="modal-head">
+          <div>
+            <h2 id="modalTitle"></h2>
+            <p class="micro" id="modalSubtitle"></p>
+          </div>
+          <button class="modal-close" id="modalClose" type="button" aria-label="Close popup">Close</button>
+        </header>
+        <ol id="modalPoints" class="modal-points"></ol>
+      </section>
+    </div>
+
     <script>
       const uploadForm = document.getElementById("uploadForm");
       const fileInput = document.getElementById("fileInput");
@@ -100,6 +116,14 @@
       const chartsSection = document.getElementById("charts");
       const structureSection = document.getElementById("structure");
       const advicePanel = document.getElementById("advicePanel");
+      const profileCard = document.getElementById("profileCard");
+      const surfaceCard = document.getElementById("surfaceCard");
+      const explainModal = document.getElementById("explainModal");
+      const modalBackdrop = document.getElementById("modalBackdrop");
+      const modalClose = document.getElementById("modalClose");
+      const modalTitle = document.getElementById("modalTitle");
+      const modalSubtitle = document.getElementById("modalSubtitle");
+      const modalPoints = document.getElementById("modalPoints");
       const money = new Intl.NumberFormat("en-US", {
         style: "currency",
         currency: "USD",
@@ -107,6 +131,7 @@
       });
 
       const chartRefs = { trend: null, expense: null, cash: null, arp: null };
+      let latestPayload = null;
 
       function setStatus(message, isError = false) {
         statusEl.textContent = message;
@@ -346,7 +371,85 @@
           .join("");
       }
 
+      function scoreBand(score) {
+        if (score >= 85) return "Strong";
+        if (score >= 65) return "Moderate";
+        return "Needs attention";
+      }
+
+      function tipByDimension(dimension) {
+        const tips = {
+          "Data Quality": "standardize date and amount formats before upload",
+          "Categorization": "tighten chart-of-accounts mapping and reduce generic buckets",
+          "Transaction Mapping": "add clearer transaction type tags in source data",
+          "Customer Coverage": "require customer code for each revenue row",
+          "Cash Discipline": "reduce receivable delay and monitor short-term cash pressure",
+        };
+        return tips[dimension] || "improve consistency through monthly review";
+      }
+
+      function openExplainModal(title, subtitle, points) {
+        modalTitle.textContent = title;
+        modalSubtitle.textContent = subtitle;
+        modalPoints.innerHTML = points.map((p) => `<li>${p}</li>`).join("");
+        explainModal.classList.remove("hidden");
+        explainModal.setAttribute("aria-hidden", "false");
+      }
+
+      function closeExplainModal() {
+        explainModal.classList.add("hidden");
+        explainModal.setAttribute("aria-hidden", "true");
+      }
+
+      function profilePointsFromData(data) {
+        const profile = data.structureProfile || { scores: [], overallScore: 0, maturity: "Not Available" };
+        const scores = [...profile.scores].sort((a, b) => a.score - b.score);
+        if (!scores.length) {
+          return ["No score data was generated for this file."];
+        }
+
+        const points = [
+          `Overall structure score is ${profile.overallScore}/100 and maturity is ${profile.maturity}.`,
+          "Each 3D pillar height represents one accounting quality dimension from 0 to 100.",
+        ];
+
+        scores.slice(0, 3).forEach((row) => {
+          points.push(
+            `${row.dimension}: ${row.score}/100 (${scoreBand(row.score)}). Priority action: ${tipByDimension(row.dimension)}.`
+          );
+        });
+
+        return points;
+      }
+
+      function surfacePointsFromData(data) {
+        const profile = data.structureProfile || { scores: [], overallScore: 0 };
+        const target = 88;
+        if (!profile.scores.length) {
+          return ["No current-vs-target data was generated for this file."];
+        }
+
+        const gaps = profile.scores
+          .map((row) => ({ dimension: row.dimension, gap: Math.max(0, target - row.score), score: row.score }))
+          .sort((a, b) => b.gap - a.gap);
+
+        const points = [
+          `The surface compares your current posture with a target benchmark of ${target}/100 for each dimension.`,
+          "Lower areas on the current plane show the biggest structural weakness.",
+        ];
+
+        gaps.slice(0, 3).forEach((row) => {
+          points.push(
+            `${row.dimension}: current ${row.score}/100, gap ${row.gap.toFixed(1)} points to target.`
+          );
+        });
+
+        points.push("Work on the highest gap first to improve overall maturity faster.");
+        return points;
+      }
+
       function renderAll(data) {
+        latestPayload = data;
         destroyCharts();
         setMetrics(data);
         renderTrend(data);
@@ -364,6 +467,49 @@
         structureSection.hidden = false;
         advicePanel.hidden = false;
       }
+
+      function handleCardKeyOpen(event, handler) {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          handler();
+        }
+      }
+
+      function openProfileExplanation() {
+        if (!latestPayload) {
+          setStatus("Upload and analyze a CSV first to get explanation details.", true);
+          return;
+        }
+        openExplainModal(
+          "3D Account Structure Profile",
+          "Point-wise explanation of what the pillars are saying.",
+          profilePointsFromData(latestPayload)
+        );
+      }
+
+      function openSurfaceExplanation() {
+        if (!latestPayload) {
+          setStatus("Upload and analyze a CSV first to get explanation details.", true);
+          return;
+        }
+        openExplainModal(
+          "3D Improvement Surface",
+          "Point-wise explanation of current posture versus target.",
+          surfacePointsFromData(latestPayload)
+        );
+      }
+
+      profileCard.addEventListener("click", openProfileExplanation);
+      surfaceCard.addEventListener("click", openSurfaceExplanation);
+      profileCard.addEventListener("keydown", (event) => handleCardKeyOpen(event, openProfileExplanation));
+      surfaceCard.addEventListener("keydown", (event) => handleCardKeyOpen(event, openSurfaceExplanation));
+      modalClose.addEventListener("click", closeExplainModal);
+      modalBackdrop.addEventListener("click", closeExplainModal);
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          closeExplainModal();
+        }
+      });
 
       document.querySelectorAll(".tilt").forEach((card) => {
         card.addEventListener("mousemove", (event) => {
