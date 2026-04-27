@@ -222,10 +222,30 @@ button:hover {
   font-size: 16px;
 }
 
+.explainable {
+  cursor: pointer;
+}
+
+.explainable:hover {
+  box-shadow: 0 28px 60px rgba(2, 6, 23, 0.52);
+}
+
+.explainable:focus-visible {
+  outline: 2px solid #7dd3fc;
+  outline-offset: 2px;
+}
+
 .micro {
   margin: 0 0 12px;
   font-size: 12px;
   color: var(--muted);
+}
+
+.tap-hint {
+  margin: -4px 0 10px;
+  font-size: 11px;
+  color: #a5f3fc;
+  letter-spacing: 0.04em;
 }
 
 canvas {
@@ -311,6 +331,63 @@ canvas {
   padding: 4px 9px;
   background: rgba(125, 211, 252, 0.2);
   border: 1px solid rgba(125, 211, 252, 0.45);
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.modal.hidden {
+  display: none;
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.68);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+.modal-card {
+  position: relative;
+  width: min(760px, 96vw);
+  max-height: min(82vh, 760px);
+  overflow: auto;
+  padding: 16px;
+}
+
+.modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.modal-head h2 {
+  margin: 0 0 8px;
+  font-size: 22px;
+}
+
+.modal-close {
+  padding: 8px 14px;
+  font-size: 12px;
+}
+
+.modal-points {
+  margin: 10px 0 0;
+  padding-left: 20px;
+}
+
+.modal-points li {
+  margin: 0 0 10px;
+  color: #e0f2fe;
+  line-height: 1.4;
 }
 
 @media (max-width: 1080px) {
