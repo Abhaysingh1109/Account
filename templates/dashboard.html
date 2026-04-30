@@ -17,14 +17,14 @@
       <header class="glass hero tilt">
         <p class="kicker">Immersive Finance Studio</p>
         <h1>Accounting Intelligence Dashboard</h1>
-        <p class="sub">Upload your CSV and experience interactive financial visuals with structure-improvement guidance.</p>
+        <p class="sub">Upload your CSV/XLS/XLSX file and experience interactive financial visuals with structure-improvement guidance.</p>
       </header>
 
       <section class="glass upload tilt">
         <form id="uploadForm">
-          <label for="fileInput">Select CSV file</label>
+          <label for="fileInput">Select CSV/XLS/XLSX file</label>
           <div class="upload-row">
-            <input id="fileInput" name="file" type="file" accept=".csv" required />
+            <input id="fileInput" name="file" type="file" accept=".csv,.xls,.xlsx" required />
             <button type="submit">Analyze</button>
           </div>
         </form>
@@ -477,7 +477,7 @@
 
       function openProfileExplanation() {
         if (!latestPayload) {
-          setStatus("Upload and analyze a CSV first to get explanation details.", true);
+          setStatus("Upload and analyze a file first to get explanation details.", true);
           return;
         }
         openExplainModal(
@@ -489,7 +489,7 @@
 
       function openSurfaceExplanation() {
         if (!latestPayload) {
-          setStatus("Upload and analyze a CSV first to get explanation details.", true);
+          setStatus("Upload and analyze a file first to get explanation details.", true);
           return;
         }
         openExplainModal(
@@ -533,14 +533,14 @@
         const file = fileInput.files[0];
 
         if (!file) {
-          setStatus("Please choose a CSV file first.", true);
+          setStatus("Please choose a CSV/XLS/XLSX file first.", true);
           return;
         }
 
         const formData = new FormData();
         formData.append("file", file);
 
-        setStatus("Analyzing your CSV data and generating structure guidance...");
+        setStatus("Analyzing your file data and generating structure guidance...");
 
         try {
           const response = await fetch("/api/analyze", {

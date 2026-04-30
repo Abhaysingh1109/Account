@@ -2,7 +2,7 @@ import os
 import re
 import socket
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, cast
 
 import numpy as np
 import pandas as pd
@@ -57,7 +57,7 @@ def find_column(columns: list[str], hints: list[str]) -> Optional[str]:
 
 def detect_columns(df: pd.DataFrame) -> ColumnMap:
     cols = [str(c) for c in df.columns.tolist()]
-    return ColumnMap(
+    mapping = ColumnMap(
         date=find_column(cols, DATE_HINTS),
         amount=find_column(cols, AMOUNT_HINTS),
         txn_type=find_column(cols, TYPE_HINTS),
@@ -66,6 +66,55 @@ def detect_columns(df: pd.DataFrame) -> ColumnMap:
         receivable=find_column(cols, AR_HINTS),
         payable=find_column(cols, AP_HINTS),
     )
+    return infer_required_columns(df, mapping)
+
+
+def _valid_ratio(series: pd.Series) -> float:
+    if len(series) == 0:
+        return 0.0
+    return float(series.notna().mean())
+
+
+def infer_required_columns(df: pd.DataFrame, mapping: ColumnMap) -> ColumnMap:
+    """Fallback inference based on values when header hints are missing."""
+    cols = [str(c) for c in df.columns.tolist()]
+    working = ColumnMap(
+        date=mapping.date,
+        amount=mapping.amount,
+        txn_type=mapping.txn_type,
+        category=mapping.category,
+        customer=mapping.customer,
+        receivable=mapping.receivable,
+        payable=mapping.payable,
+    )
+
+    if working.date is None:
+        best_date_col = None
+        best_date_ratio = 0.0
+        for col in cols:
+            parsed = cast(pd.Series, pd.to_datetime(df[col], errors="coerce"))
+            ratio = _valid_ratio(parsed)
+            if ratio > best_date_ratio:
+                best_date_ratio = ratio
+                best_date_col = col
+        # Require a meaningful proportion of parseable dates to avoid false matches.
+        if best_date_col is not None and best_date_ratio >= 0.5:
+            working.date = best_date_col
+
+    if working.amount is None:
+        best_amount_col = None
+        best_amount_ratio = 0.0
+        for col in cols:
+            numeric = coerce_numeric(df[col])
+            ratio = _valid_ratio(numeric)
+            if ratio > best_amount_ratio:
+                best_amount_ratio = ratio
+                best_amount_col = col
+        # Require sufficient numeric coverage for amount inference.
+        if best_amount_col is not None and best_amount_ratio >= 0.5:
+            working.amount = best_amount_col
+
+    return working
 
 
 def coerce_numeric(series: pd.Series) -> pd.Series:
@@ -113,7 +162,7 @@ def signed_amount(amount: float, label: str) -> float:
 def preprocess(df: pd.DataFrame, mapping: ColumnMap) -> pd.DataFrame:
     if mapping.date is None or mapping.amount is None:
         raise ValueError(
-            "Could not find required columns. CSV needs at least one Date column and one Amount column."
+            "Could not find required columns. File needs at least one Date column and one Amount column."
         )
 
     data = df.copy()
@@ -423,7 +472,7 @@ def dashboard() -> str:
 @app.post("/api/analyze")
 def analyze_csv():
     if "file" not in request.files:
-        return jsonify({"error": "Missing file field. Please upload a CSV file."}), 400
+        return jsonify({"error": "Missing file field. Please upload a CSV/XLS/XLSX file."}), 400
 
     uploaded = request.files["file"]
     filename = uploaded.filename or ""
@@ -431,13 +480,18 @@ def analyze_csv():
     if filename == "":
         return jsonify({"error": "No file selected."}), 400
 
-    if not filename.lower().endswith(".csv"):
-        return jsonify({"error": "Only .csv files are supported."}), 400
+    file_lower = filename.lower()
+    allowed_extensions = (".csv", ".xls", ".xlsx")
+    if not file_lower.endswith(allowed_extensions):
+        return jsonify({"error": "Only .csv, .xls, and .xlsx files are supported."}), 400
 
     try:
-        raw_df = pd.read_csv(uploaded)
+        if file_lower.endswith(".csv"):
+            raw_df = pd.read_csv(uploaded)
+        else:
+            raw_df = pd.read_excel(uploaded)
     except Exception as exc:
-        return jsonify({"error": f"Could not read CSV: {exc}"}), 400
+        return jsonify({"error": f"Could not read file: {exc}"}), 400
 
     mapping = detect_columns(raw_df)
 
