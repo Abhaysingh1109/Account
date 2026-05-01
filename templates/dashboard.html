@@ -69,6 +69,18 @@
           <h2>Performance Insights</h2>
           <ul id="insights"></ul>
         </article>
+
+        <article class="glass panel wide tilt">
+          <h2>Weekly Forecast (Revenue & Profit)</h2>
+          <canvas id="weeklyForecastChart"></canvas>
+          <p class="micro" id="weeklyForecastModel"></p>
+        </article>
+
+        <article class="glass panel wide tilt">
+          <h2>Monthly Forecast (Revenue & Profit)</h2>
+          <canvas id="monthlyForecastChart"></canvas>
+          <p class="micro" id="monthlyForecastModel"></p>
+        </article>
       </section>
 
       <section class="structure" id="structure" hidden>
@@ -130,7 +142,7 @@
         maximumFractionDigits: 0,
       });
 
-      const chartRefs = { trend: null, expense: null, cash: null, arp: null };
+      const chartRefs = { trend: null, expense: null, cash: null, arp: null, weeklyForecast: null, monthlyForecast: null };
       let latestPayload = null;
 
       function setStatus(message, isError = false) {
@@ -250,6 +262,97 @@
 
       function renderInsights(data) {
         document.getElementById("insights").innerHTML = data.insights.map((v) => `<li>${v}</li>`).join("");
+      }
+
+      function buildForecastLine(historyLabels, futureLabels, historyValues, forecastValues) {
+        const labels = [...historyLabels, ...futureLabels];
+        const historyLine = [...historyValues, ...Array(futureLabels.length).fill(null)];
+        const forecastLine = [...Array(historyValues.length - 1).fill(null), historyValues[historyValues.length - 1], ...forecastValues];
+        return { labels, historyLine, forecastLine };
+      }
+
+      function renderWeeklyForecast(data) {
+        const weekly = data.forecast?.weekly;
+        if (!weekly) {
+          document.getElementById("weeklyForecastModel").textContent = "Weekly forecast data is not available.";
+          return;
+        }
+
+        const rev = buildForecastLine(
+          weekly.historyLabels,
+          weekly.futureLabels,
+          weekly.history.Revenue,
+          weekly.forecast.Revenue
+        );
+        const prof = buildForecastLine(
+          weekly.historyLabels,
+          weekly.futureLabels,
+          weekly.history.Profit,
+          weekly.forecast.Profit
+        );
+
+        chartRefs.weeklyForecast = new Chart(document.getElementById("weeklyForecastChart"), {
+          type: "line",
+          data: {
+            labels: rev.labels,
+            datasets: [
+              { label: "Revenue (History)", data: rev.historyLine, borderColor: "#67e8f9", borderWidth: 3, tension: 0.25 },
+              { label: "Revenue (Forecast)", data: rev.forecastLine, borderColor: "#67e8f9", borderDash: [6, 5], borderWidth: 3, tension: 0.25 },
+              { label: "Profit (History)", data: prof.historyLine, borderColor: "#86efac", borderWidth: 3, tension: 0.25 },
+              { label: "Profit (Forecast)", data: prof.forecastLine, borderColor: "#86efac", borderDash: [6, 5], borderWidth: 3, tension: 0.25 },
+            ],
+          },
+          options: baseOptions(),
+        });
+
+        const revModel = weekly.models?.Revenue?.name || "unknown";
+        const revMae = weekly.models?.Revenue?.mae;
+        const profModel = weekly.models?.Profit?.name || "unknown";
+        const profMae = weekly.models?.Profit?.mae;
+        document.getElementById("weeklyForecastModel").textContent =
+          `Models: Revenue=${revModel} (MAE ${revMae?.toFixed ? revMae.toFixed(2) : "n/a"}), Profit=${profModel} (MAE ${profMae?.toFixed ? profMae.toFixed(2) : "n/a"}).`;
+      }
+
+      function renderMonthlyForecast(data) {
+        const monthly = data.forecast?.monthly;
+        if (!monthly) {
+          document.getElementById("monthlyForecastModel").textContent = "Monthly forecast data is not available.";
+          return;
+        }
+
+        const rev = buildForecastLine(
+          monthly.historyLabels,
+          monthly.futureLabels,
+          monthly.history.Revenue,
+          monthly.forecast.Revenue
+        );
+        const prof = buildForecastLine(
+          monthly.historyLabels,
+          monthly.futureLabels,
+          monthly.history.Profit,
+          monthly.forecast.Profit
+        );
+
+        chartRefs.monthlyForecast = new Chart(document.getElementById("monthlyForecastChart"), {
+          type: "line",
+          data: {
+            labels: rev.labels,
+            datasets: [
+              { label: "Revenue (History)", data: rev.historyLine, borderColor: "#93c5fd", borderWidth: 3, tension: 0.25 },
+              { label: "Revenue (Forecast)", data: rev.forecastLine, borderColor: "#93c5fd", borderDash: [6, 5], borderWidth: 3, tension: 0.25 },
+              { label: "Profit (History)", data: prof.historyLine, borderColor: "#fcd34d", borderWidth: 3, tension: 0.25 },
+              { label: "Profit (Forecast)", data: prof.forecastLine, borderColor: "#fcd34d", borderDash: [6, 5], borderWidth: 3, tension: 0.25 },
+            ],
+          },
+          options: baseOptions(),
+        });
+
+        const revModel = monthly.models?.Revenue?.name || "unknown";
+        const revMae = monthly.models?.Revenue?.mae;
+        const profModel = monthly.models?.Profit?.name || "unknown";
+        const profMae = monthly.models?.Profit?.mae;
+        document.getElementById("monthlyForecastModel").textContent =
+          `Models: Revenue=${revModel} (MAE ${revMae?.toFixed ? revMae.toFixed(2) : "n/a"}), Profit=${profModel} (MAE ${profMae?.toFixed ? profMae.toFixed(2) : "n/a"}).`;
       }
 
       function renderStructure3D(data) {
@@ -458,6 +561,8 @@
         renderArp(data);
         renderTopCustomers(data);
         renderInsights(data);
+        renderWeeklyForecast(data);
+        renderMonthlyForecast(data);
         renderStructure3D(data);
         renderSurface3D(data);
         renderAdvice(data);

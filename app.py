@@ -1,12 +1,15 @@
 import os
 import re
 import socket
+import importlib
+import warnings
 from dataclasses import dataclass
 from typing import Optional, cast
 
 import numpy as np
 import pandas as pd
 from flask import Flask, jsonify, render_template, request
+from numpy.typing import NDArray
 
 
 app = Flask(__name__)
@@ -215,6 +218,294 @@ def monthly_metrics(data: pd.DataFrame) -> pd.DataFrame:
     return pivot.sort_index()
 
 
+def period_metrics(data: pd.DataFrame, freq: str) -> pd.DataFrame:
+    grouped = (
+        data.groupby([pd.Grouper(key="_date", freq=freq), "_class"], as_index=False)["_amount"]
+        .sum()
+        .pivot(index="_date", columns="_class", values="_amount")
+        .fillna(0)
+    )
+
+    for col in ["Revenue", "Expense", "Receivable", "Payable"]:
+        if col not in grouped.columns:
+            grouped[col] = 0
+
+    grouped["Revenue"] = grouped["Revenue"].abs()
+    grouped["Expense"] = grouped["Expense"].abs()
+    grouped["Profit"] = grouped["Revenue"] - grouped["Expense"]
+    grouped["NetCashFlow"] = grouped["Profit"]
+    return grouped.sort_index()
+
+
+def _safe_mae(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    if len(y_true) == 0:
+        return float("inf")
+    return float(np.mean(np.abs(y_true - y_pred)))
+
+
+def _predict_naive(train: np.ndarray, horizon: int) -> np.ndarray:
+    return np.full(horizon, train[-1], dtype=float)
+
+
+def _predict_moving_average(train: np.ndarray, horizon: int, window: int = 4) -> np.ndarray:
+    w = max(1, min(window, len(train)))
+    return np.full(horizon, float(np.mean(train[-w:])), dtype=float)
+
+
+def _predict_drift(train: np.ndarray, horizon: int) -> np.ndarray:
+    if len(train) < 2:
+        return _predict_naive(train, horizon)
+    slope = (train[-1] - train[0]) / (len(train) - 1)
+    steps = np.arange(1, horizon + 1, dtype=float)
+    return train[-1] + slope * steps
+
+
+def _predict_linear_trend(train: np.ndarray, horizon: int) -> np.ndarray:
+    if len(train) < 2:
+        return _predict_naive(train, horizon)
+    x = np.arange(len(train), dtype=float)
+    coef = np.polyfit(x, train, 1)
+    x_future = np.arange(len(train), len(train) + horizon, dtype=float)
+    return coef[0] * x_future + coef[1]
+
+
+def _predict_seasonal_naive(train: np.ndarray, horizon: int, season_len: int) -> np.ndarray:
+    if season_len <= 0 or len(train) < season_len:
+        return _predict_naive(train, horizon)
+    base = train[-season_len:]
+    repeats = int(np.ceil(horizon / season_len))
+    return np.tile(base, repeats)[:horizon].astype(float)
+
+
+def _predict_holt_winters(
+    train: NDArray[np.float64], horizon: int, season_len: int
+) -> Optional[NDArray[np.float64]]:
+    try:
+        hw_module = importlib.import_module("statsmodels.tsa.holtwinters")
+        ExponentialSmoothing = getattr(hw_module, "ExponentialSmoothing")
+    except Exception:
+        return None
+    if len(train) < max(8, season_len * 2):
+        return None
+    try:
+        model = ExponentialSmoothing(
+            train,
+            trend="add",
+            seasonal="add" if season_len >= 2 else None,
+            seasonal_periods=season_len if season_len >= 2 else None,
+            damped_trend=True,
+            initialization_method="estimated",
+        )
+        fitted = model.fit(optimized=True, use_brute=True)
+        fc = np.asarray(fitted.forecast(horizon), dtype=float)
+        return fc
+    except Exception:
+        return None
+
+
+def _predict_auto_ar(
+    train: NDArray[np.float64], horizon: int, max_lag: int = 8
+) -> Optional[NDArray[np.float64]]:
+    n = len(train)
+    if n < 6:
+        return None
+    lag = max(2, min(max_lag, n - 1))
+    try:
+        y = train.copy()
+        preds: list[float] = []
+        for _ in range(horizon):
+            x = np.arange(lag, dtype=float)
+            window = y[-lag:]
+            coef = np.polyfit(x, window, 1)
+            nxt = float(coef[0] * lag + coef[1])
+            preds.append(nxt)
+            y = np.append(y, nxt)
+        return np.asarray(preds, dtype=float)
+    except Exception:
+        return None
+
+
+def _predict_sarima(
+    train: NDArray[np.float64], horizon: int, season_len: int
+) -> Optional[NDArray[np.float64]]:
+    if len(train) < max(12, season_len * 2):
+        return None
+    try:
+        sarimax_module = importlib.import_module("statsmodels.tsa.statespace.sarimax")
+        SARIMAX = getattr(sarimax_module, "SARIMAX")
+    except Exception:
+        return None
+
+    # Small bounded search to balance quality and speed.
+    candidate_orders = [(1, 1, 1), (2, 1, 1), (1, 1, 2)]
+    seasonal_orders = [(0, 1, 1, season_len), (1, 1, 1, season_len)] if season_len >= 2 else [(0, 0, 0, 0)]
+    best_aic = float("inf")
+    best_result = None
+
+    for order in candidate_orders:
+        for seasonal_order in seasonal_orders:
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    model = SARIMAX(
+                        train,
+                        order=order,
+                        seasonal_order=seasonal_order,
+                        enforce_stationarity=False,
+                        enforce_invertibility=False,
+                    )
+                    result = model.fit(disp=False)
+                aic = float(result.aic)
+                if np.isfinite(aic) and aic < best_aic:
+                    best_aic = aic
+                    best_result = result
+            except Exception:
+                continue
+
+    if best_result is None:
+        return None
+
+    try:
+        pred = np.asarray(best_result.forecast(steps=horizon), dtype=float)
+        return pred
+    except Exception:
+        return None
+
+
+def _fit_and_forecast(series: pd.Series, horizon: int, season_len: int) -> dict:
+    clean = np.asarray(series.astype(float).to_numpy(), dtype=float)
+    n = len(clean)
+    if n < 3:
+        fallback = _predict_naive(clean, horizon) if n else np.zeros(horizon, dtype=float)
+        return {
+            "model": "insufficient_history_naive",
+            "mae": None,
+            "forecast": fallback,
+            "lower": fallback,
+            "upper": fallback,
+        }
+
+    validation = int(min(max(2, int(n // 4)), 8))
+    train = clean[:-validation]
+    val = clean[-validation:]
+    if len(train) < 2:
+        train = clean[:-1]
+        val = clean[-1:]
+
+    candidates: dict[str, NDArray[np.float64]] = {
+        "naive": _predict_naive(train, len(val)),
+        "moving_average": _predict_moving_average(train, len(val), window=4),
+        "drift": _predict_drift(train, len(val)),
+        "linear_trend": _predict_linear_trend(train, len(val)),
+        "seasonal_naive": _predict_seasonal_naive(train, len(val), season_len=season_len),
+    }
+    hw_pred = _predict_holt_winters(train, len(val), season_len)
+    if hw_pred is not None:
+        candidates["holt_winters"] = hw_pred
+    ar_pred = _predict_auto_ar(train, len(val))
+    if ar_pred is not None:
+        candidates["autoregressive_trend"] = ar_pred
+    sarima_pred = _predict_sarima(train, len(val), season_len=season_len)
+    if sarima_pred is not None:
+        candidates["sarima"] = sarima_pred
+
+    scores = {name: _safe_mae(val, pred) for name, pred in candidates.items()}
+    best_model = min(scores, key=lambda model_name: scores[model_name])
+    best_mae = float(scores[best_model])
+
+    full_candidates: dict[str, NDArray[np.float64]] = {
+        "naive": _predict_naive(clean, horizon),
+        "moving_average": _predict_moving_average(clean, horizon, window=4),
+        "drift": _predict_drift(clean, horizon),
+        "linear_trend": _predict_linear_trend(clean, horizon),
+        "seasonal_naive": _predict_seasonal_naive(clean, horizon, season_len=season_len),
+    }
+    full_hw = _predict_holt_winters(clean, horizon, season_len)
+    if full_hw is not None:
+        full_candidates["holt_winters"] = full_hw
+    full_ar = _predict_auto_ar(clean, horizon)
+    if full_ar is not None:
+        full_candidates["autoregressive_trend"] = full_ar
+    full_sarima = _predict_sarima(clean, horizon, season_len=season_len)
+    if full_sarima is not None:
+        full_candidates["sarima"] = full_sarima
+
+    if best_model not in full_candidates:
+        available = [name for name in scores.keys() if name in full_candidates]
+        if available:
+            best_model = min(available, key=lambda model_name: scores[model_name])
+        else:
+            best_model = "naive"
+    forecast = full_candidates[best_model]
+
+    residual_std = float(np.std(val - candidates[best_model])) if len(val) else 0.0
+    z_80 = 1.28
+    margin = z_80 * residual_std
+    lower = forecast - margin
+    upper = forecast + margin
+
+    return {
+        "model": best_model,
+        "mae": best_mae,
+        "forecast": forecast,
+        "lower": lower,
+        "upper": upper,
+    }
+
+
+def build_forecast(data: pd.DataFrame) -> dict:
+    monthly = period_metrics(data, "MS")
+    weekly = period_metrics(data, "W-MON")
+
+    monthly_horizon = 3
+    weekly_horizon = 8
+    monthly_future_idx = pd.date_range(
+        monthly.index.max() + pd.offsets.MonthBegin(1), periods=monthly_horizon, freq="MS"
+    )
+    weekly_future_idx = pd.date_range(
+        weekly.index.max() + pd.offsets.Week(1), periods=weekly_horizon, freq="W-MON"
+    )
+
+    monthly_series = ["Revenue", "Expense", "Profit", "NetCashFlow"]
+    weekly_series = ["Revenue", "Expense", "Profit", "NetCashFlow"]
+
+    monthly_out: dict[str, dict] = {"models": {}, "history": {}, "forecast": {}, "bands": {}}
+    weekly_out: dict[str, dict] = {"models": {}, "history": {}, "forecast": {}, "bands": {}}
+
+    for col in monthly_series:
+        fit = _fit_and_forecast(monthly[col], monthly_horizon, season_len=12)
+        monthly_out["history"][col] = [float(v) for v in monthly[col].to_list()]
+        monthly_out["forecast"][col] = [float(v) for v in fit["forecast"]]
+        monthly_out["bands"][col] = {
+            "lower": [float(v) for v in fit["lower"]],
+            "upper": [float(v) for v in fit["upper"]],
+        }
+        monthly_out["models"][col] = {"name": fit["model"], "mae": fit["mae"]}
+
+    for col in weekly_series:
+        fit = _fit_and_forecast(weekly[col], weekly_horizon, season_len=4)
+        weekly_out["history"][col] = [float(v) for v in weekly[col].to_list()]
+        weekly_out["forecast"][col] = [float(v) for v in fit["forecast"]]
+        weekly_out["bands"][col] = {
+            "lower": [float(v) for v in fit["lower"]],
+            "upper": [float(v) for v in fit["upper"]],
+        }
+        weekly_out["models"][col] = {"name": fit["model"], "mae": fit["mae"]}
+
+    return {
+        "monthly": {
+            "historyLabels": [d.strftime("%Y-%m") for d in monthly.index.to_list()],
+            "futureLabels": [d.strftime("%Y-%m") for d in monthly_future_idx.to_list()],
+            **monthly_out,
+        },
+        "weekly": {
+            "historyLabels": [d.strftime("%Y-%m-%d") for d in weekly.index.to_list()],
+            "futureLabels": [d.strftime("%Y-%m-%d") for d in weekly_future_idx.to_list()],
+            **weekly_out,
+        },
+    }
+
+
 def generate_insights(monthly: pd.DataFrame, data: pd.DataFrame) -> list[str]:
     insights: list[str] = []
     if monthly.empty:
@@ -229,7 +520,7 @@ def generate_insights(monthly: pd.DataFrame, data: pd.DataFrame) -> list[str]:
         insights.append("Healthy margin: consider reinvesting part of profit into channels with measurable ROI.")
 
     if len(monthly) >= 3 and monthly["Revenue"].iloc[-1] < monthly["Revenue"].iloc[-3]:
-        insights.append("Revenue softened in recent months: build a rolling 90-day pipeline and weekly forecast.")
+        insights.append("Revenue softened in recent months: weekly forecasting flags pressure and should guide pipeline goals.")
 
     expense_by_cat = (
         data[data["_class"] == "Expense"].groupby("_category")["_amount"].sum().abs().sort_values(ascending=False)
@@ -422,6 +713,7 @@ def build_payload(raw_df: pd.DataFrame, data: pd.DataFrame, monthly: pd.DataFram
     )
 
     structure_recommendations, structure_profile = generate_structure_recommendations(raw_df, data, monthly, mapping)
+    forecast = build_forecast(data)
 
     return {
         "months": months,
@@ -448,6 +740,7 @@ def build_payload(raw_df: pd.DataFrame, data: pd.DataFrame, monthly: pd.DataFram
         "insights": generate_insights(monthly, data),
         "structureAdvice": structure_recommendations,
         "structureProfile": structure_profile,
+        "forecast": forecast,
         "summary": {
             "rowsUploaded": int(len(raw_df)),
             "rowsUsed": int(len(data)),
