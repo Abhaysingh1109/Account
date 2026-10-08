@@ -14,6 +14,7 @@ from numpy.typing import NDArray
 
 app = Flask(__name__)
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
 
 DATE_HINTS = ["date", "transaction_date", "posting_date", "invoice_date", "entry_date"]
 AMOUNT_HINTS = ["amount", "value", "net_amount", "total", "balance", "debit", "credit"]
@@ -783,8 +784,11 @@ def analyze_csv():
             raw_df = pd.read_csv(uploaded)
         else:
             raw_df = pd.read_excel(uploaded)
-    except Exception as exc:
-        return jsonify({"error": f"Could not read file: {exc}"}), 400
+    except Exception:
+        return jsonify({"error": "Could not read this file. Check that it is a valid, unprotected CSV or Excel export."}), 400
+
+    if raw_df.empty or len(raw_df.columns) == 0:
+        return jsonify({"error": "This file does not contain any transaction rows."}), 400
 
     mapping = detect_columns(raw_df)
 
@@ -796,9 +800,18 @@ def analyze_csv():
     if data.empty:
         return jsonify({"error": "No valid rows found after cleaning date/amount values."}), 400
 
-    monthly = monthly_metrics(data)
-    payload = build_payload(raw_df, data, monthly, mapping)
-    return jsonify(payload)
+    try:
+        monthly = monthly_metrics(data)
+        payload = build_payload(raw_df, data, monthly, mapping)
+        return jsonify(payload)
+    except Exception:
+        app.logger.exception("Analysis failed while building dashboard payload")
+        return jsonify({"error": "We could not complete the analysis for this spreadsheet. Check the file structure and try again."}), 422
+
+
+@app.errorhandler(413)
+def upload_too_large(_error):
+    return jsonify({"error": "This file is larger than the 16 MB upload limit."}), 413
 
 
 @app.after_request
@@ -826,4 +839,4 @@ if __name__ == "__main__":
     if port != start_port:
         print(f"Port {start_port} is in use. Starting on port {port} instead.")
 
-    app.run(host="0.0.0.0", port=port, debug=True, use_reloader=False)
+    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)

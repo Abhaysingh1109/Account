@@ -3,34 +3,44 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Accounting Glass Dashboard</title>
-    <link rel="stylesheet" href="/static/dashboard.css" />
+    <meta name="theme-color" content="#f4f5f6" />
+    <title>Accounting dashboard</title>
+    <link rel="stylesheet" href="/static/dashboard.css?v=3" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
   </head>
   <body>
-    <div class="bg bg-a"></div>
-    <div class="bg bg-b"></div>
-    <div class="grid-lines"></div>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Main navigation">
+        <a class="brand" href="/" aria-label="Accounting dashboard home"><span class="brand-mark">A</span><span>ACCOUNTING</span></a>
+        <p class="nav-label">ANALYSIS</p>
+        <a class="nav-item active" href="#overview"><span class="nav-icon">01</span> Overview</a>
+        <a class="nav-item" href="#charts"><span class="nav-icon">02</span> Financial reports</a>
+        <a class="nav-item" href="#structure"><span class="nav-icon">03</span> Data quality</a>
+        <div class="sidebar-bottom"><span><strong>ACCOUNTING WORKSPACE</strong><small>CSV and Excel analysis</small></span></div>
+      </aside>
 
-    <main class="wrap">
-      <header class="glass hero tilt">
-        <p class="kicker">Immersive Finance Studio</p>
-        <h1>Accounting Intelligence Dashboard</h1>
-        <p class="sub">Upload your CSV/XLS/XLSX file and experience interactive financial visuals with structure-improvement guidance.</p>
-      </header>
+      <main class="wrap" id="overview">
+      <header class="topbar"><div><span class="eyebrow">REPORTING</span><h1>Accounting dashboard</h1></div></header>
 
-      <section class="glass upload tilt">
-        <form id="uploadForm">
-          <label for="fileInput">Select CSV/XLS/XLSX file</label>
-          <div class="upload-row">
-            <input id="fileInput" name="file" type="file" accept=".csv,.xls,.xlsx" required />
-            <button type="submit">Analyze</button>
-          </div>
-        </form>
-        <p id="status" class="status">Waiting for file upload.</p>
+      <section class="hero">
+        <div class="hero-copy"><p class="kicker">FINANCIAL REPORTING</p>
+        <h2>Understand your business performance.</h2>
+        <p class="sub">Upload a transaction report to review revenue, expenses, cash flow and account structure in one place.</p></div>
       </section>
 
+      <section class="upload" aria-labelledby="uploadTitle">
+        <form id="uploadForm">
+          <div class="upload-heading"><span class="upload-icon">↑</span><div><h2 id="uploadTitle">Start with your data</h2><p>Upload a transaction export to build your financial overview.</p></div></div>
+          <div class="upload-row">
+            <label class="file-picker" for="fileInput"><span class="file-symbol">＋</span><span id="fileName">Choose a file <small>CSV, XLS or XLSX · up to 16 MB</small></span><input id="fileInput" name="file" type="file" accept=".csv,.xls,.xlsx" required /></label>
+            <button type="submit"><span>Analyze file</span><span aria-hidden="true">→</span></button>
+          </div>
+        </form>
+        <p id="status" class="status" role="status" aria-live="polite">Your spreadsheet is processed securely for this session.</p>
+      </section>
+
+      <div id="resultsMeta" class="results-meta" hidden><span class="live-dot"></span><span id="metaText"></span></div>
       <section class="metrics" id="metrics" hidden>
         <article class="glass card tilt"><h3>Revenue</h3><p id="m-revenue"></p></article>
         <article class="glass card tilt"><h3>Expense</h3><p id="m-expense"></p></article>
@@ -104,8 +114,7 @@
         <p class="micro" id="maturityLine"></p>
         <div id="adviceList" class="advice-list"></div>
       </section>
-    </main>
-
+      </main>
     <div class="modal hidden" id="explainModal" aria-hidden="true">
       <div class="modal-backdrop" id="modalBackdrop"></div>
       <section class="modal-card glass" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
@@ -124,6 +133,9 @@
       const uploadForm = document.getElementById("uploadForm");
       const fileInput = document.getElementById("fileInput");
       const statusEl = document.getElementById("status");
+      const resultsMeta = document.getElementById("resultsMeta");
+      const metaText = document.getElementById("metaText");
+      const submitButton = uploadForm.querySelector("button[type='submit']");
       const metricsSection = document.getElementById("metrics");
       const chartsSection = document.getElementById("charts");
       const structureSection = document.getElementById("structure");
@@ -144,6 +156,18 @@
 
       const chartRefs = { trend: null, expense: null, cash: null, arp: null, weeklyForecast: null, monthlyForecast: null };
       let latestPayload = null;
+
+      function escapeHTML(value) {
+        return String(value ?? "").replace(/[&<>"']/g, (character) => ({
+          "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+        })[character]);
+      }
+
+      fileInput.addEventListener("change", () => {
+        document.getElementById("fileName").innerHTML = fileInput.files[0]
+          ? `${escapeHTML(fileInput.files[0].name)} <small>Ready to analyze</small>`
+          : 'Choose a file <small>CSV, XLS or XLSX · up to 16 MB</small>';
+      });
 
       function setStatus(message, isError = false) {
         statusEl.textContent = message;
@@ -173,12 +197,12 @@
           maintainAspectRatio: false,
           plugins: {
             legend: {
-              labels: { color: "#dbeafe" },
+              labels: { color: "#68736a", usePointStyle: true, boxWidth: 7 },
             },
           },
           scales: {
-            x: { ticks: { color: "#bfdbfe" }, grid: { color: "rgba(191,219,254,0.16)" } },
-            y: { ticks: { color: "#bfdbfe" }, grid: { color: "rgba(191,219,254,0.16)" } },
+            x: { ticks: { color: "#7d877e" }, grid: { color: "#edf0ec" }, border: { display: false } },
+            y: { ticks: { color: "#7d877e" }, grid: { color: "#edf0ec" }, border: { display: false } },
           },
         };
       }
@@ -189,8 +213,8 @@
           data: {
             labels: data.months,
             datasets: [
-              { label: "Revenue", data: data.revenue, borderColor: "#7dd3fc", backgroundColor: "#7dd3fc", borderWidth: 3 },
-              { label: "Profit", data: data.profit, borderColor: "#6ee7b7", backgroundColor: "#6ee7b7", borderWidth: 3 },
+              { label: "Revenue", data: data.revenue, borderColor: "#557b5e", backgroundColor: "#557b5e", borderWidth: 2, pointRadius: 2 },
+              { label: "Profit", data: data.profit, borderColor: "#c18a53", backgroundColor: "#c18a53", borderWidth: 2, pointRadius: 2 },
             ],
           },
           options: { ...baseOptions(), tension: 0.28 },
@@ -204,7 +228,7 @@
             labels: data.expenseBreakdown.labels,
             datasets: [{
               data: data.expenseBreakdown.values,
-              backgroundColor: ["#fda4af", "#fdba74", "#fde68a", "#86efac", "#93c5fd", "#c4b5fd", "#67e8f9", "#f9a8d4"],
+              backgroundColor: ["#557b5e", "#85a38a", "#c18a53", "#b7c5ad", "#7b9281", "#d1b992", "#9eae9d", "#d5ddd4"],
             }],
           },
           options: {
@@ -220,8 +244,8 @@
           data: {
             labels: data.months,
             datasets: [
-              { label: "Inflow", data: data.revenue, backgroundColor: "rgba(110, 231, 183, 0.75)", borderRadius: 8 },
-              { label: "Outflow", data: data.expenses.map((v) => -v), backgroundColor: "rgba(251, 113, 133, 0.75)", borderRadius: 8 },
+              { label: "Inflow", data: data.revenue, backgroundColor: "rgba(85, 123, 94, 0.78)", borderRadius: 4 },
+              { label: "Outflow", data: data.expenses.map((v) => -v), backgroundColor: "rgba(190, 122, 105, 0.72)", borderRadius: 4 },
             ],
           },
           options: {
@@ -240,8 +264,8 @@
           data: {
             labels: data.months,
             datasets: [
-              { label: "Receivable", data: data.receivable, backgroundColor: "rgba(147, 197, 253, 0.8)", borderRadius: 8 },
-              { label: "Payable", data: data.payable, backgroundColor: "rgba(196, 181, 253, 0.8)", borderRadius: 8 },
+              { label: "Receivable", data: data.receivable, backgroundColor: "rgba(85, 123, 94, 0.78)", borderRadius: 4 },
+              { label: "Payable", data: data.payable, backgroundColor: "rgba(193, 138, 83, 0.72)", borderRadius: 4 },
             ],
           },
           options: baseOptions(),
@@ -256,12 +280,12 @@
         }
 
         box.innerHTML = data.topCustomers
-          .map((row) => `<div class="row"><span>${row.name}</span><strong>${money.format(row.revenue)}</strong></div>`)
+          .map((row) => `<div class="row"><span>${escapeHTML(row.name)}</span><strong>${money.format(row.revenue)}</strong></div>`)
           .join("");
       }
 
       function renderInsights(data) {
-        document.getElementById("insights").innerHTML = data.insights.map((v) => `<li>${v}</li>`).join("");
+        document.getElementById("insights").innerHTML = data.insights.map((v) => `<li>${escapeHTML(v)}</li>`).join("");
       }
 
       function buildForecastLine(historyLabels, futureLabels, historyValues, forecastValues) {
@@ -464,11 +488,11 @@
         list.innerHTML = advice
           .map((item) => `
             <article class="advice-item ${item.priority.toLowerCase()}">
-              <div class="chip">${item.priority}</div>
-              <h3>${item.title}</h3>
-              <p><strong>Finding:</strong> ${item.finding}</p>
-              <p><strong>Action:</strong> ${item.action}</p>
-              <p><strong>Impact:</strong> ${item.impact}</p>
+              <div class="chip">${escapeHTML(item.priority)}</div>
+              <h3>${escapeHTML(item.title)}</h3>
+              <p><strong>Finding:</strong> ${escapeHTML(item.finding)}</p>
+              <p><strong>Action:</strong> ${escapeHTML(item.action)}</p>
+              <p><strong>Impact:</strong> ${escapeHTML(item.impact)}</p>
             </article>
           `)
           .join("");
@@ -494,7 +518,7 @@
       function openExplainModal(title, subtitle, points) {
         modalTitle.textContent = title;
         modalSubtitle.textContent = subtitle;
-        modalPoints.innerHTML = points.map((p) => `<li>${p}</li>`).join("");
+        modalPoints.innerHTML = points.map((p) => `<li>${escapeHTML(p)}</li>`).join("");
         explainModal.classList.remove("hidden");
         explainModal.setAttribute("aria-hidden", "false");
       }
@@ -616,23 +640,6 @@
         }
       });
 
-      document.querySelectorAll(".tilt").forEach((card) => {
-        card.addEventListener("mousemove", (event) => {
-          const rect = card.getBoundingClientRect();
-          const x = event.clientX - rect.left;
-          const y = event.clientY - rect.top;
-          const cx = rect.width / 2;
-          const cy = rect.height / 2;
-          const rx = ((cy - y) / cy) * 4;
-          const ry = ((x - cx) / cx) * 4;
-          card.style.transform = `perspective(900px) rotateX(${rx}deg) rotateY(${ry}deg)`;
-        });
-
-        card.addEventListener("mouseleave", () => {
-          card.style.transform = "perspective(900px) rotateX(0deg) rotateY(0deg)";
-        });
-      });
-
       uploadForm.addEventListener("submit", async (event) => {
         event.preventDefault();
         const file = fileInput.files[0];
@@ -646,6 +653,8 @@
         formData.append("file", file);
 
         setStatus("Analyzing your file data and generating structure guidance...");
+        submitButton.disabled = true;
+        submitButton.querySelector("span:first-child").textContent = "Analyzing…";
 
         try {
           const response = await fetch("/api/analyze", {
@@ -653,7 +662,9 @@
             body: formData,
           });
 
-          const payload = await response.json();
+          let payload;
+          try { payload = await response.json(); }
+          catch { throw new Error("The server returned an unreadable response. Please try again."); }
 
           if (!response.ok) {
             throw new Error(payload.error || "Failed to analyze file.");
@@ -661,8 +672,13 @@
 
           renderAll(payload);
           setStatus(`Analysis complete. Rows used: ${payload.summary.rowsUsed.toLocaleString()}.`);
+          metaText.textContent = `${payload.summary.rowsUsed.toLocaleString()} of ${payload.summary.rowsUploaded.toLocaleString()} rows · ${payload.summary.startDate} to ${payload.summary.endDate}`;
+          resultsMeta.hidden = false;
         } catch (error) {
-          setStatus(error.message, true);
+          setStatus(error instanceof TypeError ? "Could not reach the analysis service. Check your connection and try again." : error.message, true);
+        } finally {
+          submitButton.disabled = false;
+          submitButton.querySelector("span:first-child").textContent = "Analyze file";
         }
       });
     </script>
