@@ -790,12 +790,14 @@ def analyze_csv():
     if raw_df.empty or len(raw_df.columns) == 0:
         return jsonify({"error": "This file does not contain any transaction rows."}), 400
 
-    mapping = detect_columns(raw_df)
-
     try:
+        mapping = detect_columns(raw_df)
         data = preprocess(raw_df, mapping)
     except ValueError as exc:
         return jsonify({"error": str(exc), "columnsFound": list(raw_df.columns)}), 400
+    except Exception:
+        app.logger.exception("Analysis failed while preparing uploaded file")
+        return jsonify({"error": "We could not process this spreadsheet. Check that its columns contain valid dates and amounts."}), 422
 
     if data.empty:
         return jsonify({"error": "No valid rows found after cleaning date/amount values."}), 400
